@@ -18,7 +18,7 @@ class PCAFaultDetector(BaseFaultDetectionAlgorithm):
     computed indicators against statistically derived thresholds.
     """
 
-    def __init__(self, retained_variance=0.9, confidence_level=0.99):
+    def __init__(self, retained_variance=0.9, confidence_level=0.99, scale_residuals = False):
         """
         Initialize the PCA Fault Detector.
 
@@ -28,6 +28,7 @@ class PCAFaultDetector(BaseFaultDetectionAlgorithm):
         """
         self.confidence_level = confidence_level
         self.retained_variance = retained_variance
+        self.scale_residuals = scale_residuals
         self.x_standard_scaler = StandardScaler()
         self.n_samples = 0
         self.n_features = 0
@@ -72,16 +73,31 @@ class PCAFaultDetector(BaseFaultDetectionAlgorithm):
         theta_2 = np.sum(self.residual_eigenvalues ** 2)
         theta_3 = np.sum(self.residual_eigenvalues ** 3)
         h0 = 1 - (2 * theta_1 * theta_3) / (3 * theta_2 ** 2)
-
-        def get_thresholds(conf_lvl):
-            c_alpha = stats.norm.ppf(conf_lvl)
-            J_th_SPE = theta_1 * (c_alpha * np.sqrt(2 * theta_2 * h0 ** 2 / theta_1) + 1 + (theta_2 * h0 * (h0 - 1)) / (theta_1 ** 2)) ** (1 / h0)
-            F_alpha = stats.f.ppf(conf_lvl, self.n_components, self.n_samples - self.n_components)
-            J_th_T2 = (self.n_components * (self.n_samples**2 - 1)) / (self.n_samples * (self.n_samples - 1)) * F_alpha
-            return J_th_SPE, J_th_T2
+        
+        if not self.scale_residuals:
+            def get_thresholds(conf_lvl):
+                c_alpha = stats.norm.ppf(conf_lvl)
+                J_th_SPE = theta_1 * (c_alpha * np.sqrt(2 * theta_2 * h0 ** 2 / theta_1) + 1 + (theta_2 * h0 * (h0 - 1)) / (theta_1 ** 2)) ** (1 / h0)
+                F_alpha = stats.f.ppf(conf_lvl, self.n_components, self.n_samples - self.n_components)
+                J_th_T2 = (self.n_components * (self.n_samples**2 - 1)) / (self.n_samples * (self.n_samples - 1)) * F_alpha
+                return J_th_SPE, J_th_T2
+        else:
+            train_spe_val,_ = self.compute_indicators(X_train)
+            train_spe_val = np.sort(train_spe_val)
+            def get_thresholds(conf_lvl):
+                th_percentile_idx = min(int(len(train_spe_val)*conf_lvl), len(train_spe_val)-1)
+                J_th_SPE = train_spe_val[th_percentile_idx]
+                F_alpha = stats.f.ppf(conf_lvl, self.n_components, self.n_samples - self.n_components)
+                J_th_T2 = (self.n_components * (self.n_samples**2 - 1)) / (self.n_samples * (self.n_samples - 1)) * F_alpha
+                return J_th_SPE, J_th_T2
 
         self.J_th_SPE, self.J_th_T2 = get_thresholds(self.confidence_level)
-        self.thresholds = [get_thresholds(conf_lvl) for conf_lvl in np.linspace(0.0, 1, 1000)]
+        
+        conf_levs = np.linspace(0,1,100)
+        self.confidence_levels = conf_levs
+        #conf_levs = np.linspace(0.5,1,10)
+        
+        self.thresholds = [get_thresholds(conf_lvl) for conf_lvl in conf_levs]
 
     def roc_parametrers_range(self):
         """
@@ -101,7 +117,10 @@ class PCAFaultDetector(BaseFaultDetectionAlgorithm):
         """
         X_norm = self.x_standard_scaler.transform(X)
         residual_scores = X_norm @ self.P_res
-        SPE_vals = np.sum((residual_scores**2) / self.residual_eigenvalues, axis=1)
+        if self.scale_residuals:
+            SPE_vals = np.sum((residual_scores**2)/self.residual_eigenvalues , axis=1)
+        else:
+            SPE_vals = np.sum((residual_scores**2), axis=1)
 
         pc_scores = X_norm @ self.P_pc
         T2_vals = np.sum((pc_scores**2) / self.retained_eigenvalues, axis=1)
