@@ -21,6 +21,7 @@ class PCAFaultDetector(BaseFaultDetectionAlgorithm):
         self.idx = None
         self.thresholds = None
         self.retained_eigenvalues = None
+        self.residual_eigenvalues = None
     
     def use_default_predictor(self):
         return True
@@ -49,6 +50,7 @@ class PCAFaultDetector(BaseFaultDetectionAlgorithm):
         self.P_res = self.eigenvectors[:, self.n_components:]  # Residual PCs
 
         self.retained_eigenvalues = self.eigenvalues[:self.n_components]
+        self.residual_eigenvalues = self.eigenvalues[self.n_components:]
         
         theta_1 = np.sum(self.eigenvalues[self.n_components:])
         theta_2 = np.sum(self.eigenvalues[self.n_components:] ** 2)
@@ -71,7 +73,7 @@ class PCAFaultDetector(BaseFaultDetectionAlgorithm):
     def compute_indicators(self, X):
         X_norm = self.x_standard_scaler.transform(X)
         residual = X_norm @ self.P_res               # shape (m, n-l)
-        SPE_vals = np.sum(residual**2, axis=1)  # shape (m,)
+        SPE_vals = np.sum((residual**2)/self.residual_eigenvalues , axis=1)  # shape (m,)
 
         pc_scores = X_norm @ self.P_pc
         T2_vals = np.sum((pc_scores**2) / self.retained_eigenvalues, axis=1)  # shape (m,)
