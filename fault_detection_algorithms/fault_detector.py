@@ -24,6 +24,38 @@ class BaseFaultDetectionAlgorithm(abc.ABC):
         pass
 
     @abc.abstractmethod
+    def compute_indicators(self, X):
+        """
+        Compute the monitoring statistics or indicators (e.g., SPE, T², anomaly scores).
+        
+        Parameters
+        ----------
+        X : array-like
+            Input feature data.
+        
+        Returns
+        -------
+        dict
+            Dictionary containing computed indicators.
+        """
+        pass
+
+    @abc.abstractmethod
+    def detect_faults(self, indicators, parmas= None):
+        """
+        Apply decision rules or thresholds to indicators to detect faults.
+        
+        Parameters
+        ----------
+        indicators : dict
+            Dictionary of computed indicators from compute_indicators().
+        
+        Returns
+        -------
+        array-like
+            Binary fault decisions (1 = fault, 0 = no fault).
+        """
+        pass
     def predict(self, X):
         """
         Make predictions for fault detection.
@@ -38,9 +70,15 @@ class BaseFaultDetectionAlgorithm(abc.ABC):
         array-like
             Predictions indicating detected faults (1) or normal status (0).
         """
+        return self.detect_faults(self.compute_indicators(X))
+    @abc.abstractmethod
+    def roc_parametrers_range(self):
         pass
     @abc.abstractmethod
-    def roc_curve_data(self, X_test, y_test, fault_numbers, by_fault_type = True):
+    def use_default_predictor(self):
+        pass
+    
+    def roc_curve_data(self, X_test, y_test, fault_numbers, by_fault_type = True, precomputed_indicators = None):
         """
         compute the data for generating an roc curve
 
@@ -61,7 +99,52 @@ class BaseFaultDetectionAlgorithm(abc.ABC):
             Dictionary of evaluation metrics. This base method can be overridden
             for custom evaluation logic.
         """
-        pass
+        fault_ids = np.unique(fault_numbers)
+        roc_parameters_list = self.roc_parametrers_range()
+
+        if precomputed_indicators is not None and self.use_default_predictor():
+            indicators = precomputed_indicators
+        else:
+            indicators = self.compute_indicators(X_test)
+            
+        
+        global_roc_data_dict= {
+            "Fault Detection Rate" : [],
+            "False Alarm Rate" : []
+        }
+        by_fault_roc_data_dict = {fault_id: {
+            "Fault Detection Rate" : [],
+            "False Alarm Rate" : []
+        } for fault_id in fault_ids}
+        
+        print("iterating over roc parameters")
+        
+        for idx,desicion_params in enumerate(roc_parameters_list):
+            print(f"iterating over roc parameters: {(idx+1)/len(roc_parameters_list)}")
+            faults = self.detect_faults(indicators, desicion_params)
+            global_error_metrics = BaseFaultDetectionAlgorithm.compute_error_metrics(faults, y_test)
+            global_roc_data_dict["Fault Detection Rate"].append(global_error_metrics["Fault Detection Rate"])
+            global_roc_data_dict["False Alarm Rate"].append(global_error_metrics["False Alarm Rate"])
+
+        if by_fault_type:
+            print("computing threshold by fault")
+            for idx, fault_num in enumerate(fault_ids):
+                print(f"iterating over faults: {(idx+1)/len(fault_ids)}")
+                fault_selector = fault_numbers==fault_num
+                expected= y_test[fault_selector]
+                fault_indicators = [indicator[fault_selector] for indicator in indicators]
+                for desicion_params in roc_parameters_list:
+                    predicted = self.detect_faults(fault_indicators, desicion_params) 
+                    fault_error_metrics =  BaseFaultDetectionAlgorithm.compute_error_metrics(predicted, expected)
+                    by_fault_roc_data_dict[fault_num]["Fault Detection Rate"].append(fault_error_metrics["Fault Detection Rate"])
+                    by_fault_roc_data_dict[fault_num]["False Alarm Rate"].append(fault_error_metrics["False Alarm Rate"])
+        
+        return {
+            "global": global_roc_data_dict,
+            "by_fault": by_fault_roc_data_dict,
+            "thresholds": self.thresholds
+        }
+        
     @classmethod
     def compute_error_metrics(cls, y_pred, y_test):
         """
@@ -110,7 +193,12 @@ class BaseFaultDetectionAlgorithm(abc.ABC):
             Dictionary of evaluation metrics. This base method can be overridden
             for custom evaluation logic.
         """
-        predicted_fault = self.predict(X_test)
+        precomputed_indicators = None
+        if self.use_default_predictor():
+            precomputed_indicators = self.compute_indicators(X_test)
+            predicted_fault =self.detect_faults(precomputed_indicators)
+        else:
+            predicted_fault = self.predict(X_test)
 
         result_dict = {"global": dict(), "by_fault":dict()}
 
@@ -120,9 +208,10 @@ class BaseFaultDetectionAlgorithm(abc.ABC):
                 predicted= predicted_fault[fault_selector]
                 expected= y_test[fault_selector]
                 result_dict["by_fault"][fault_num]=BaseFaultDetectionAlgorithm.compute_error_metrics(predicted, expected)
+                
         result_dict["global"] = BaseFaultDetectionAlgorithm.compute_error_metrics(predicted_fault, y_test) 
         if roc_curve:
-            result_dict["roc_data"] = self.roc_curve_data(X_test, y_test, fault_numbers, by_fault_type)
+            result_dict["roc_data"] = self.roc_curve_data(X_test, y_test, fault_numbers, by_fault_type, precomputed_indicators)
 
         return result_dict
             

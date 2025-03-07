@@ -20,6 +20,10 @@ class PCAFaultDetector(BaseFaultDetectionAlgorithm):
         self.eigenvectors = None 
         self.idx = None
         self.thresholds = None
+        self.retained_eigenvalues = None
+    
+    def use_default_predictor(self):
+        return True
         
     def train(self, X_train, y_train=None):
         """
@@ -43,6 +47,8 @@ class PCAFaultDetector(BaseFaultDetectionAlgorithm):
 
         self.P_pc = self.eigenvectors[:, :self.n_components]  # Retained PCs
         self.P_res = self.eigenvectors[:, self.n_components:]  # Residual PCs
+
+        self.retained_eigenvalues = self.eigenvalues[:self.n_components]
         
         theta_1 = np.sum(self.eigenvalues[self.n_components:])
         theta_2 = np.sum(self.eigenvalues[self.n_components:] ** 2)
@@ -58,81 +64,81 @@ class PCAFaultDetector(BaseFaultDetectionAlgorithm):
             return J_th_SPE, J_th_T2
         self.J_th_SPE, self.J_th_T2 = get_thresholds(self.confidence_level)
 
-        self.thresholds = [get_thresholds(conf_lvl) for conf_lvl in np.linspace(0,1,100)]
-            
+        self.thresholds = [get_thresholds(conf_lvl) for conf_lvl in np.linspace(0,1,200)]
+    def roc_parametrers_range(self):
+        return self.thresholds
 
-    def predict(self, X):
-        """
-        Make predictions for fault detection.
-
-        Parameters
-        ----------
-        X : array-like or DataFrame
-            Feature data for prediction.
-
-        Returns
-        -------
-        array-like
-            Predictions indicating detected faults (1) or normal status (0).
-        """
+    def compute_indicators(self, X):
         X_norm = self.x_standard_scaler.transform(X)
-        eigs = self.eigenvalues[:self.n_components]
         residual = X_norm @ self.P_res               # shape (m, n-l)
         SPE_vals = np.sum(residual**2, axis=1)  # shape (m,)
 
         pc_scores = X_norm @ self.P_pc
-        T2_vals = np.sum((pc_scores**2) / eigs, axis=1)  # shape (m,)
-        faults = (SPE_vals > self.J_th_SPE) | (T2_vals > self.J_th_T2)
-        return faults
+        T2_vals = np.sum((pc_scores**2) / self.retained_eigenvalues, axis=1)  # shape (m,)
+        return SPE_vals, T2_vals
 
-    def roc_curve_data(self, X_test, y_test, fault_numbers=[], by_fault_type = True):
-        print("computing roc curve data")
-        print("computing roc initial steps")
-        X_norm = self.x_standard_scaler.transform(X_test)
-        eigs = self.eigenvalues[:self.n_components]
-        residual = X_norm @ self.P_res               # shape (m, n-l)
-        SPE_vals = np.sum(residual**2, axis=1)  # shape (m,)
+    
+    def detect_faults(self, indicators, params=None):
+        SPE_vals = indicators[0]
+        T2_vals = indicators[1]
+        SPE_threshold = self.J_th_SPE
+        T2_threshold = self.J_th_T2
+        if params is not None:
+            SPE_threshold = params[0] 
+            T2_threshold = params[1]
+            
+        return (SPE_vals > SPE_threshold) | (T2_vals > T2_threshold)
 
-        pc_scores = X_norm @ self.P_pc
-        T2_vals = np.sum((pc_scores**2) / eigs, axis=1)  # shape (m,)
-
-        fault_ids = np.unique(fault_numbers)
-
-        global_roc_data_dict= {
-            "Fault Detection Rate" : [],
-            "False Alarm Rate" : []
-        }
-        by_fault_roc_data_dict = {fault_id: {
-            "Fault Detection Rate" : [],
-            "False Alarm Rate" : []
-        } for fault_id in fault_ids}
         
-        print("iterating over thresholds")
-        for idx,(J_th_SPE, J_th_T2) in enumerate(self.thresholds):
-            print(f"iterating over thresholds: {(idx+1)/len(self.thresholds)}")
-            faults = (SPE_vals > J_th_SPE) | (T2_vals > J_th_T2)
-            global_error_metrics = BaseFaultDetectionAlgorithm.compute_error_metrics(faults, y_test)
-            global_roc_data_dict["Fault Detection Rate"].append(global_error_metrics["Fault Detection Rate"])
-            global_roc_data_dict["False Alarm Rate"].append(global_error_metrics["False Alarm Rate"])
+        
 
-        if by_fault_type:
-            print("computing threshold by fault")
-            for idx, fault_num in enumerate(fault_ids):
-                print(f"iterating over faults: {(idx+1)/len(fault_ids)}")
-                fault_selector = fault_numbers==fault_num
-                expected= y_test[fault_selector]
-                SPE_vals_fault = SPE_vals[fault_selector]
-                T2_vals_fault = T2_vals[fault_selector]
-                for (J_th_SPE, J_th_T2) in self.thresholds:
-                    predicted = (SPE_vals_fault > J_th_SPE) | (T2_vals_fault > J_th_T2)
-                    fault_error_metrics =  BaseFaultDetectionAlgorithm.compute_error_metrics(predicted, expected)
-                    by_fault_roc_data_dict[fault_num]["Fault Detection Rate"].append(fault_error_metrics["Fault Detection Rate"])
-                    by_fault_roc_data_dict[fault_num]["False Alarm Rate"].append(fault_error_metrics["False Alarm Rate"])
-        return {
-            "global": global_roc_data_dict,
-            "by_fault": by_fault_roc_data_dict,
-            "thresholds": self.thresholds
-        }
+    # def roc_curve_data(self, X_test, y_test, fault_numbers=[], by_fault_type = True):
+    #     print("computing roc curve data")
+    #     print("computing roc initial steps")
+    #     X_norm = self.x_standard_scaler.transform(X_test)
+    #     residual = X_norm @ self.P_res               # shape (m, n-l)
+    #     SPE_vals = np.sum(residual**2, axis=1)  # shape (m,)
+
+    #     pc_scores = X_norm @ self.P_pc
+    #     T2_vals = np.sum((pc_scores**2) / self.retained_eigenvalues, axis=1)  # shape (m,)
+
+    #     fault_ids = np.unique(fault_numbers)
+
+    #     global_roc_data_dict= {
+    #         "Fault Detection Rate" : [],
+    #         "False Alarm Rate" : []
+    #     }
+    #     by_fault_roc_data_dict = {fault_id: {
+    #         "Fault Detection Rate" : [],
+    #         "False Alarm Rate" : []
+    #     } for fault_id in fault_ids}
+        
+    #     print("iterating over thresholds")
+    #     for idx,(J_th_SPE, J_th_T2) in enumerate(self.thresholds):
+    #         print(f"iterating over thresholds: {(idx+1)/len(self.thresholds)}")
+    #         faults = (SPE_vals > J_th_SPE) | (T2_vals > J_th_T2)
+    #         global_error_metrics = BaseFaultDetectionAlgorithm.compute_error_metrics(faults, y_test)
+    #         global_roc_data_dict["Fault Detection Rate"].append(global_error_metrics["Fault Detection Rate"])
+    #         global_roc_data_dict["False Alarm Rate"].append(global_error_metrics["False Alarm Rate"])
+
+    #     if by_fault_type:
+    #         print("computing threshold by fault")
+    #         for idx, fault_num in enumerate(fault_ids):
+    #             print(f"iterating over faults: {(idx+1)/len(fault_ids)}")
+    #             fault_selector = fault_numbers==fault_num
+    #             expected= y_test[fault_selector]
+    #             SPE_vals_fault = SPE_vals[fault_selector]
+    #             T2_vals_fault = T2_vals[fault_selector]
+    #             for (J_th_SPE, J_th_T2) in self.thresholds:
+    #                 predicted = (SPE_vals_fault > J_th_SPE) | (T2_vals_fault > J_th_T2)
+    #                 fault_error_metrics =  BaseFaultDetectionAlgorithm.compute_error_metrics(predicted, expected)
+    #                 by_fault_roc_data_dict[fault_num]["Fault Detection Rate"].append(fault_error_metrics["Fault Detection Rate"])
+    #                 by_fault_roc_data_dict[fault_num]["False Alarm Rate"].append(fault_error_metrics["False Alarm Rate"])
+    #     return {
+    #         "global": global_roc_data_dict,
+    #         "by_fault": by_fault_roc_data_dict,
+    #         "thresholds": self.thresholds
+    #     }
             
             
         
