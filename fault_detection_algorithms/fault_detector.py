@@ -4,100 +4,95 @@ import numpy as np
 
 class BaseFaultDetectionAlgorithm(abc.ABC):
     """
-    Abstract base class for all fault detection algorithms.
-    Defines the key methods and attributes expected in any
-    fault detection implementation.
+    Abstract base class for fault detection algorithms.
+
+    Provides a standardized interface for implementing different fault detection methods.
+    All subclasses must implement the core methods defined here.
     """
 
     @abc.abstractmethod
     def train(self, X_train, y_train):
         """
         Train the fault detection model.
-        
-        Parameters
-        ----------
-        X_train : array-like or DataFrame
-            Feature data for training.
-        y_train : array-like
-            Labels or targets for training (if applicable).
+
+        Parameters:
+        - X_train (array-like): Training data.
+        - y_train (array-like): Optional labels (can be None if unsupervised).
         """
         pass
 
     @abc.abstractmethod
     def compute_indicators(self, X):
         """
-        Compute the monitoring statistics or indicators (e.g., SPE, T², anomaly scores).
-        
-        Parameters
-        ----------
-        X : array-like
-            Input feature data.
-        
-        Returns
-        -------
-        dict
-            Dictionary containing computed indicators.
+        Compute monitoring indicators (e.g., SPE, T²) from input data.
+
+        Parameters:
+        - X (array-like): Input feature data.
+
+        Returns:
+        - dict or tuple: Computed indicators.
         """
         pass
 
     @abc.abstractmethod
-    def detect_faults(self, indicators, parmas= None):
+    def detect_faults(self, indicators, params=None):
         """
-        Apply decision rules or thresholds to indicators to detect faults.
-        
-        Parameters
-        ----------
-        indicators : dict
-            Dictionary of computed indicators from compute_indicators().
-        
-        Returns
-        -------
-        array-like
-            Binary fault decisions (1 = fault, 0 = no fault).
+        Apply decision logic to indicators to detect faults.
+
+        Parameters:
+        - indicators (dict or tuple): Computed monitoring indicators.
+        - params (optional): Thresholds or parameters for decision making.
+
+        Returns:
+        - array-like: Binary fault decisions (1 = fault, 0 = no fault).
         """
         pass
+
     def predict(self, X):
         """
-        Make predictions for fault detection.
+        Full prediction pipeline from data to fault decisions.
 
-        Parameters
-        ----------
-        X : array-like or DataFrame
-            Feature data for prediction.
+        Parameters:
+        - X (array-like): Input feature data.
 
-        Returns
-        -------
-        array-like
-            Predictions indicating detected faults (1) or normal status (0).
+        Returns:
+        - array-like: Binary fault decisions.
         """
         return self.detect_faults(self.compute_indicators(X))
+
     @abc.abstractmethod
     def roc_parametrers_range(self):
+        """
+        Define the range of parameters (e.g., thresholds) to use for ROC curve computation.
+
+        Returns:
+        - list: List of parameter sets.
+        """
         pass
+
     @abc.abstractmethod
     def use_default_predictor(self):
-        pass
-    
-    def roc_curve_data(self, X_test, y_test, fault_numbers, by_fault_type = True, precomputed_indicators = None):
         """
-        compute the data for generating an roc curve
+        Indicates if the model uses its own internal prediction method.
 
-        Parameters
-        ----------
-        X_test : array-like or DataFrame
-            Feature data for testing.
-        y_test : array-like
-            Ground truth labels or targets.
-        fault_numbers: array-like
-            id of the fault: 0-> no fault
-        by_fault_type: bool
-            perform the computation for each fault separately
+        Returns:
+        - bool: True if using default predictor, False otherwise.
+        """
+        pass
 
-        Returns
-        -------
-        dict
-            Dictionary of evaluation metrics. This base method can be overridden
-            for custom evaluation logic.
+    def roc_curve_data(self, X_test, y_test, fault_numbers, by_fault_type=True, precomputed_indicators=None):
+        """
+        Compute ROC curve data for model evaluation.
+
+        Parameters:
+        - X_test (array-like): Test data.
+        - y_test (array-like): Ground truth labels.
+        - fault_numbers (array-like): Fault identifiers.
+        - by_fault_type (bool): Compute ROC curves for each fault type separately.
+        - precomputed_indicators (optional): Precomputed indicators to reuse.
+
+        Returns:
+        - dict: ROC curve data.
         """
         fault_ids = np.unique(fault_numbers)
         roc_parameters_list = self.roc_parametrers_range()
@@ -106,131 +101,87 @@ class BaseFaultDetectionAlgorithm(abc.ABC):
             indicators = precomputed_indicators
         else:
             indicators = self.compute_indicators(X_test)
-            
-        
-        global_roc_data_dict= {
-            "Fault Detection Rate" : [],
-            "False Alarm Rate" : []
-        }
-        by_fault_roc_data_dict = {fault_id: {
-            "Fault Detection Rate" : [],
-            "False Alarm Rate" : []
-        } for fault_id in fault_ids}
-        
-        print("iterating over roc parameters")
-        
-        for idx,desicion_params in enumerate(roc_parameters_list):
-            print(f"iterating over roc parameters: {(idx+1)/len(roc_parameters_list)}")
-            faults = self.detect_faults(indicators, desicion_params)
-            global_error_metrics = BaseFaultDetectionAlgorithm.compute_error_metrics(faults, y_test)
-            global_roc_data_dict["Fault Detection Rate"].append(global_error_metrics["Fault Detection Rate"])
-            global_roc_data_dict["False Alarm Rate"].append(global_error_metrics["False Alarm Rate"])
+
+        global_roc_data = {"Fault Detection Rate": [], "False Alarm Rate": []}
+        by_fault_roc_data = {fid: {"Fault Detection Rate": [], "False Alarm Rate": []} for fid in fault_ids}
+
+        for params in roc_parameters_list:
+            faults = self.detect_faults(indicators, params)
+            metrics = self.compute_error_metrics(faults, y_test)
+            global_roc_data["Fault Detection Rate"].append(metrics["Fault Detection Rate"])
+            global_roc_data["False Alarm Rate"].append(metrics["False Alarm Rate"])
 
         if by_fault_type:
-            print("computing threshold by fault")
-            for idx, fault_num in enumerate(fault_ids):
-                print(f"iterating over faults: {(idx+1)/len(fault_ids)}")
-                fault_selector = fault_numbers==fault_num
-                expected= y_test[fault_selector]
-                fault_indicators = [indicator[fault_selector] for indicator in indicators]
-                for desicion_params in roc_parameters_list:
-                    predicted = self.detect_faults(fault_indicators, desicion_params) 
-                    fault_error_metrics =  BaseFaultDetectionAlgorithm.compute_error_metrics(predicted, expected)
-                    by_fault_roc_data_dict[fault_num]["Fault Detection Rate"].append(fault_error_metrics["Fault Detection Rate"])
-                    by_fault_roc_data_dict[fault_num]["False Alarm Rate"].append(fault_error_metrics["False Alarm Rate"])
-        
-        return {
-            "global": global_roc_data_dict,
-            "by_fault": by_fault_roc_data_dict,
-            "thresholds": self.thresholds
-        }
-        
+            for fid in fault_ids:
+                selector = fault_numbers == fid
+                for params in roc_parameters_list:
+                    faults = self.detect_faults([ind[selector] for ind in indicators], params)
+                    metrics = self.compute_error_metrics(faults, y_test[selector])
+                    by_fault_roc_data[fid]["Fault Detection Rate"].append(metrics["Fault Detection Rate"])
+                    by_fault_roc_data[fid]["False Alarm Rate"].append(metrics["False Alarm Rate"])
+
+        return {"global": global_roc_data, "by_fault": by_fault_roc_data}
+
     @classmethod
     def compute_error_metrics(cls, y_pred, y_test):
         """
-        compute the data for generating an roc curve
+        Compute standard fault detection metrics.
 
-        Parameters
-        ----------
-        y_pred: array-like 
-            predicted labels.
-        y_test : array-like
-            Ground truth labels or targets.
+        Parameters:
+        - y_pred (array-like): Predicted labels.
+        - y_test (array-like): Ground truth labels.
 
-        Returns
-        -------
-        dict
-            Dictionary of evaluation metrics. This base method can be overridden
-            for custom evaluation logic.
+        Returns:
+        - dict: Fault Detection Rate, False Detection Rate, False Alarm Rate.
         """
-        TP = np.sum(y_pred &  y_test)
+        TP = np.sum(y_pred & y_test)
         FP = np.sum(y_pred & ~y_test)
-        FN = np.sum(~y_pred &  y_test)
+        FN = np.sum(~y_pred & y_test)
         TN = np.sum(~y_pred & ~y_test)
-    
-        fault_detection_rate = TP/(TP+FN)
-        false_alarm_rate = FP/(TN+FP)
-        false_detection_rate= FP/(TP+FP)
+
         return {
-            "Fault Detection Rate": fault_detection_rate,
-            "False Detection Rate": false_detection_rate,
-            "False Alarm Rate": false_alarm_rate
+            "Fault Detection Rate": TP / (TP + FN),
+            "False Detection Rate": FP / (TP + FP),
+            "False Alarm Rate": FP / (TN + FP)
         }
-    def evaluate(self, X_test, y_test, fault_numbers, roc_curve=False, by_fault_type = True):
-        """
-        Evaluate the model performance on test data.
 
-        Parameters
-        ----------
-        X_test : array-like or DataFrame
-            Feature data for testing.
-        y_test : array-like
-            Ground truth labels or targets.
-
-        Returns
-        -------
-        dict
-            Dictionary of evaluation metrics. This base method can be overridden
-            for custom evaluation logic.
+    def evaluate(self, X_test, y_test, fault_numbers, roc_curve=False, by_fault_type=True):
         """
-        precomputed_indicators = None
+        Evaluate model performance on test data.
+
+        Parameters:
+        - X_test (array-like): Test data.
+        - y_test (array-like): Ground truth labels.
+        - fault_numbers (array-like): Fault identifiers.
+        - roc_curve (bool): Whether to compute ROC data.
+        - by_fault_type (bool): Compute metrics for each fault type separately.
+
+        Returns:
+        - dict: Evaluation results.
+        """
         if self.use_default_predictor():
-            precomputed_indicators = self.compute_indicators(X_test)
-            predicted_fault =self.detect_faults(precomputed_indicators)
+            indicators = self.compute_indicators(X_test)
+            predictions = self.detect_faults(indicators)
         else:
-            predicted_fault = self.predict(X_test)
+            predictions = self.predict(X_test)
 
-        result_dict = {"global": dict(), "by_fault":dict()}
+        results = {"global": self.compute_error_metrics(predictions, y_test), "by_fault": {}}
 
         if by_fault_type:
-            for fault_num in np.unique(fault_numbers):
-                fault_selector = fault_numbers==fault_num
-                predicted= predicted_fault[fault_selector]
-                expected= y_test[fault_selector]
-                result_dict["by_fault"][fault_num]=BaseFaultDetectionAlgorithm.compute_error_metrics(predicted, expected)
-                
-        result_dict["global"] = BaseFaultDetectionAlgorithm.compute_error_metrics(predicted_fault, y_test) 
-        if roc_curve:
-            result_dict["roc_data"] = self.roc_curve_data(X_test, y_test, fault_numbers, by_fault_type, precomputed_indicators)
+            for fid in np.unique(fault_numbers):
+                selector = fault_numbers == fid
+                results["by_fault"][fid] = self.compute_error_metrics(predictions[selector], y_test[selector])
 
-        return result_dict
-            
-        
+        if roc_curve:
+            results["roc_data"] = self.roc_curve_data(X_test, y_test, fault_numbers, by_fault_type, indicators)
+
+        return results
+
     @classmethod
     def load(cls, filename):
-        """
-        Class method to load a fault detection model from a pickle file.
-        """
         with open(filename, 'rb') as f:
-            instance = pickle.load(f)
-        # Ensure the loaded object is actually a subclass instance
-        # if not isinstance(instance, cls):
-        #     raise TypeError("Loaded object is not an instance of this class.")
-        return instance
-    
+            return pickle.load(f)
+
     def save(self, filename):
-        """
-        Instance method to save a fault detection model to a pickle file.
-        """
         with open(filename, 'wb') as f:
             pickle.dump(self, f)
