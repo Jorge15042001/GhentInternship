@@ -11,7 +11,7 @@ class PLSFaultDetector(BaseFaultDetectionAlgorithm):
     Monitors SPE and T² statistics for detecting anomalies based on latent variable modeling.
     """
 
-    def __init__(self, n_components, confidence_level=0.99):
+    def __init__(self, n_components=6, confidence_level=0.99):
         """
         Initialize the PLS Fault Detector.
 
@@ -70,15 +70,26 @@ class PLSFaultDetector(BaseFaultDetectionAlgorithm):
         theta_2 = np.sum(np.var(SPE_residual, axis=0)**2)
         theta_3 = np.sum(np.var(SPE_residual, axis=0)**3)
         h0 = 1 - (2 * theta_1 * theta_3) / (3 * theta_2**2)
-        c_alpha = stats.norm.ppf(self.confidence_level)
-        self.J_th_SPE = theta_1 * (c_alpha * np.sqrt(2 * theta_2 * h0**2 / theta_1) + 1 + (theta_2 * h0 * (h0 - 1)) / (theta_1**2))**(1 / h0)
 
-        # T² threshold
-        F_alpha = stats.f.ppf(self.confidence_level, self.n_components, self.n_samples - self.n_components)
-        self.J_th_T2 = (self.n_components * (self.n_samples**2 - 1)) / (self.n_samples * (self.n_samples - 1)) * F_alpha
+        def get_thresholds(conf_lvl):
+            c_alpha = stats.norm.ppf(conf_lvl)
+            J_th_SPE = theta_1 * (c_alpha * np.sqrt(2 * theta_2 * h0**2 / theta_1) + 1 + (theta_2 * h0 * (h0 - 1)) / (theta_1**2))**(1 / h0)
+    
+            # T² threshold
+            F_alpha = stats.f.ppf(conf_lvl, self.n_components, self.n_samples - self.n_components)
+            J_th_T2 = (self.n_components * (self.n_samples**2 - 1)) / (self.n_samples * (self.n_samples - 1)) * F_alpha
+            return J_th_SPE, J_th_T2
+        
+        self.J_th_SPE, self.J_th_T2 = get_thresholds(self.confidence_level)
+        
+        conf_levs = np.linspace(0,1,100)
+        self.confidence_levels = conf_levs**10
+        #conf_levs = np.linspace(0.5,1,10)
+        
+        self.thresholds = [get_thresholds(conf_lvl) for conf_lvl in self.confidence_levels]
 
     def roc_parametrers_range(self):
-        return [(self.J_th_SPE, self.J_th_T2)]
+        return self.thresholds
 
     def compute_indicators(self, X):
         """

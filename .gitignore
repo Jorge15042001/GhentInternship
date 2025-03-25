@@ -1,5 +1,8 @@
 datasets/
 cache_data/
+pytorch_env/
+model_cache/
+external_libraries/
 __pycache__/
 .ipynb_checkpoints/
 

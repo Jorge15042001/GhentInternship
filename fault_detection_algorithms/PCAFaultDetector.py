@@ -90,20 +90,106 @@ class PCAFaultDetector(BaseFaultDetectionAlgorithm):
                 F_alpha = stats.f.ppf(conf_lvl, self.n_components, self.n_samples - self.n_components)
                 J_th_T2 = (self.n_components * (self.n_samples**2 - 1)) / (self.n_samples * (self.n_samples - 1)) * F_alpha
                 return J_th_SPE, J_th_T2
-
-        self.J_th_SPE, self.J_th_T2 = get_thresholds(self.confidence_level)
+        indicators = None
+        expected = None
+        if self.scale_residuals:
+            indicators = self.compute_indicators(X_train)
+            expected = np.zeros_like(indicators[0], np.bool_)
+            
+        self.J_th_SPE, self.J_th_T2 = get_thresholds(self.confidence_level) #self.roc_parametrers_range(indicators=indicators,expected = expected, conf_lvls=[self.confidence_level])[0]
         
-        conf_levs = np.linspace(0,1,100)
-        self.confidence_levels = conf_levs
-        #conf_levs = np.linspace(0.5,1,10)
+        # conf_levs = np.linspace(0,1,100)
+        # self.confidence_levels = conf_levs
+        # conf_levs = np.linspace(0.5,1,10)
         
-        self.thresholds = [get_thresholds(conf_lvl) for conf_lvl in conf_levs]
+        # self.thresholds = [get_thresholds(conf_lvl) for conf_lvl in conf_levs]
 
-    def roc_parametrers_range(self):
+    # def get_thresholds(self,conf_lvl, indicators = None, expected):
+    #     # Calculate SPE and T² thresholds
+    #     F_alpha = stats.f.ppf(conf_lvl, self.n_components, self.n_samples - self.n_components)
+    #     J_th_T2 = (self.n_components * (self.n_samples**2 - 1)) / (self.n_samples * (self.n_samples - 1)) * F_alpha
+        
+    #     if self.scale_residuals:
+    #         train_spe_val,_ = self.compute_indicators(indicators)
+    #         train_spe_val = np.sort(train_spe_val)
+    #         th_percentile_idx = min(int(len(train_spe_val)*conf_lvl), len(train_spe_val)-1)
+    #         J_th_SPE = train_spe_val[th_percentile_idx]
+    #         return J_th_SPE, J_th_T2
+
+    #     else:
+    #         theta_1 = np.sum(self.residual_eigenvalues)
+    #         theta_2 = np.sum(self.residual_eigenvalues ** 2)
+    #         theta_3 = np.sum(self.residual_eigenvalues ** 3)
+    #         h0 = 1 - (2 * theta_1 * theta_3) / (3 * theta_2 ** 2)
+        
+    #         c_alpha = stats.norm.ppf(conf_lvl)
+    #         J_th_SPE = theta_1 * (c_alpha * np.sqrt(2 * theta_2 * h0 ** 2 / theta_1) + 1 + (theta_2 * h0 * (h0 - 1)) / (theta_1 ** 2)) ** (1 / h0)
+    #         return J_th_SPE, J_th_T2
+        
+
+    def roc_parametrers_range(self, indicators = None, expected = None, npoints = 100, conf_lvls=None):
         """
         Returns threshold pairs for ROC curve computation.
         """
-        return self.thresholds
+        if conf_lvls is None:
+            conf_lvls = np.linspace(0,1,npoints)
+        else:
+            conf_lvls = np.array(conf_lvls)
+        F_alphas = stats.f.ppf(conf_lvls, self.n_components, self.n_samples - self.n_components)
+        T2_thresholds = (self.n_components * (self.n_samples**2 - 1)) / (self.n_samples * (self.n_samples - 1)) * F_alphas
+
+        # if self.scale_residuals:
+        #     spe_values = indicators[0]
+            
+        #     min_faulty_spe = 0
+        #     faulty_spe = spe_values[expected]
+        #     if faulty_spe.shape[0] > 0:
+        #         min_faulty_spe = np.min(faulty_spe)
+                
+        #     max_non_faulty_spe = 1000
+        #     nonfaulty_spe= spe_values[np.bitwise_not(expected)]
+        #     if nonfaulty_spe.shape[0] > 0:
+        #         max_non_faulty_spe = np.max(nonfaulty_spe)
+        #     elif faulty_spe.shape[0]>0:
+        #         max_non_faulty_spe = np.max(faulty_spe)
+
+        #     SPE_thresholds = conf_lvls*(max_non_faulty_spe-min_faulty_spe)+min_faulty_spe
+        #     return np.array([SPE_thresholds, T2_thresholds]).T
+        # else:
+        #     theta_1 = np.sum(self.residual_eigenvalues)
+        #     theta_2 = np.sum(self.residual_eigenvalues ** 2)
+        #     theta_3 = np.sum(self.residual_eigenvalues ** 3)
+        #     h0 = 1 - (2 * theta_1 * theta_3) / (3 * theta_2 ** 2)
+        #     c_alphas = stats.norm.ppf(conf_lvls)
+        #     SPE_thresholds = theta_1 * (c_alphas * np.sqrt(2 * theta_2 * h0 ** 2 / theta_1) + 1 + (theta_2 * h0 * (h0 - 1)) / (theta_1 ** 2)) ** (1 / h0)
+        #     return np.array([SPE_thresholds, T2_thresholds]).T
+
+    
+        spe_values = indicators[0]
+        
+        min_faulty_spe = 0
+        faulty_spe = spe_values[expected]
+        if faulty_spe.shape[0] > 0:
+            min_faulty_spe = np.min(faulty_spe)
+            
+        max_non_faulty_spe = 1000
+        nonfaulty_spe= spe_values[np.bitwise_not(expected)]
+        if nonfaulty_spe.shape[0] > 0:
+            max_non_faulty_spe = np.max(nonfaulty_spe)
+        elif faulty_spe.shape[0]>0:
+            max_non_faulty_spe = np.max(faulty_spe)
+        if max_non_faulty_spe<= min_faulty_spe:
+            min_faulty_spe = 0
+        selector = (spe_values>=min_faulty_spe) & (spe_values<=max_non_faulty_spe)
+        spe_values_in_range = spe_values[selector]
+        # t2_values_in_range = indicators[1][selector]
+        spe_idx= np.argsort(spe_values_in_range)
+        spe_values_sorted = spe_values_in_range[spe_idx]
+        # t2_values_sorted = t2_values_in_range[spe_idx]
+        
+        return np.array([np.percentile(spe_values_sorted,conf_lvls*100), T2_thresholds]).T
+
+        # return self.thresholds
 
     def compute_indicators(self, X):
         """
