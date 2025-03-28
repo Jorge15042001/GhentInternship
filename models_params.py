@@ -3,14 +3,14 @@ from fault_detection_algorithms.PLSFaultDetector import PLSFaultDetector
 from fault_detection_algorithms.PLSFaultDetectorImproved import PLSFaultDetectorImproved
 
 models_params = {
-    # "pca": {
-    #     'model_class': PCAFaultDetector,
-    #     "dataset_id":"tep_fault_free_training",
-    #     'retained_variance': 0.9,
-    #     'confidence_level': 0.99,
-    #     'scale_residuals': False,
-    #     'ignore_cache': True 
-    #  },
+    "pca": {
+        'model_class': PCAFaultDetector,
+        "dataset_id":"tep_fault_free_training",
+        'retained_variance': 0.9,
+        'confidence_level': 0.99,
+        'scale_residuals': False,
+        'ignore_cache': True 
+     },
     "pca_r_scl": {
         'model_class': PCAFaultDetector,
         "dataset_id":"tep_fault_free_training",

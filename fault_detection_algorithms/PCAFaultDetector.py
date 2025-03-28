@@ -86,7 +86,7 @@ class PCAFaultDetector(BaseFaultDetectionAlgorithm):
             train_spe_val = np.sort(train_spe_val)
             def get_thresholds(conf_lvl):
                 th_percentile_idx = min(int(len(train_spe_val)*conf_lvl), len(train_spe_val)-1)
-                J_th_SPE = train_spe_val[th_percentile_idx]
+                J_th_SE = train_spe_val[th_percentile_idx]
                 F_alpha = stats.f.ppf(conf_lvl, self.n_components, self.n_samples - self.n_components)
                 J_th_T2 = (self.n_components * (self.n_samples**2 - 1)) / (self.n_samples * (self.n_samples - 1)) * F_alpha
                 return J_th_SPE, J_th_T2

@@ -1,6 +1,7 @@
 import abc
 import pickle
 import numpy as np
+from sklearn.metrics import roc_curve
 
 class BaseFaultDetectionAlgorithm(abc.ABC):
     """
@@ -100,30 +101,40 @@ class BaseFaultDetectionAlgorithm(abc.ABC):
             indicators = precomputed_indicators
         else:
             indicators = self.compute_indicators(X_test)
-        roc_parameters_list = self.roc_parametrers_range(indicators=indicators,expected = y_test, npoints = 100 )
 
         global_roc_data = {"Fault Detection Rate": [], "False Alarm Rate": []}
         by_fault_roc_data = {fid: {"Fault Detection Rate": [], "False Alarm Rate": []} for fid in fault_ids}
 
-        for params in roc_parameters_list:
-            faults = self.detect_faults(indicators, params)
-            metrics = self.compute_error_metrics(faults, y_test)
-            global_roc_data["Fault Detection Rate"].append(metrics["Fault Detection Rate"])
-            global_roc_data["False Alarm Rate"].append(metrics["False Alarm Rate"])
-        global_roc_data["thresholds"] = roc_parameters_list
+        # roc_parameters_list = self.roc_parametrers_range(indicators=indicators,expected = y_test, npoints = 100 )
+        
+        # for params in roc_parameters_list:
+        #     faults = self.detect_faults(indicators, params)
+        #     metrics = self.compute_error_metrics(faults, y_test)
+        #     global_roc_data["Fault Detection Rate"].append(metrics["Fault Detection Rate"])
+        #     global_roc_data["False Alarm Rate"].append(metrics["False Alarm Rate"])
+        # global_roc_data["thresholds"] = roc_parameters_list
 
+        # if by_fault_type:
+        #     for fid in fault_ids:
+        #         selector = fault_numbers == fid
+        #         fault_indicators = [ind[selector] for ind in indicators]
+        #         fault_expected = y_test[selector]
+        #         fault_roc_parameters_list = self.roc_parametrers_range(indicators=fault_indicators,expected = fault_expected )
+        #         for params in fault_roc_parameters_list:
+        #             faults = self.detect_faults(fault_indicators, params)
+        #             metrics = self.compute_error_metrics(faults, fault_expected)
+        #             by_fault_roc_data[fid]["Fault Detection Rate"].append(metrics["Fault Detection Rate"])
+        #             by_fault_roc_data[fid]["False Alarm Rate"].append(metrics["False Alarm Rate"])
+        #         by_fault_roc_data[fid]["thresholds"] = fault_roc_parameters_list#.append(metrics["False Alarm Rate"])
+        fpr, tpr, thresholds = roc_curve(y_test, indicators[0]  )
+        global_roc_data = {"Fault Detection Rate": tpr, "False Alarm Rate": fpr, "thresholds": thresholds}
         if by_fault_type:
             for fid in fault_ids:
                 selector = fault_numbers == fid
-                fault_indicators = [ind[selector] for ind in indicators]
+                fault_indicators = indicators[0][selector]
                 fault_expected = y_test[selector]
-                fault_roc_parameters_list = self.roc_parametrers_range(indicators=fault_indicators,expected = fault_expected )
-                for params in fault_roc_parameters_list:
-                    faults = self.detect_faults(fault_indicators, params)
-                    metrics = self.compute_error_metrics(faults, fault_expected)
-                    by_fault_roc_data[fid]["Fault Detection Rate"].append(metrics["Fault Detection Rate"])
-                    by_fault_roc_data[fid]["False Alarm Rate"].append(metrics["False Alarm Rate"])
-                by_fault_roc_data[fid]["thresholds"] = fault_roc_parameters_list#.append(metrics["False Alarm Rate"])
+                fpr, tpr, thresholds = roc_curve(fault_expected, fault_indicators)
+                by_fault_roc_data[fid] ={"Fault Detection Rate": tpr, "False Alarm Rate": fpr, "thresholds": thresholds} 
 
         return {"global": global_roc_data, "by_fault": by_fault_roc_data}
 
