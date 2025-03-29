@@ -232,7 +232,7 @@ def plot_all_roc_curves(results, fault_ids=list(range(21)), plot_models=None, sc
     for j in range(i+1, len(axes)):
         axes[j].axis("off")
 
-    #  plt.tight_layout()
+    plt.tight_layout()
     if show_plot:
         plt.show()
     if save_plot is not None:
