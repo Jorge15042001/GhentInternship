@@ -21,8 +21,9 @@ ordering = [0, 1, 2, 4, 5, 6, 7, 8, 12, 13, 14,
 
 #  show_error_metrics_comparison_new(results, ordering, fault_error_metrics=[
 #                                "Fault Detection Rate", "False Detection Rate"])
-show_error_metrics_comparison_new(results, ordering, )
+fault_metrics_df, non_fault_metrics_df = show_error_metrics_comparison_new(results, ordering, return_metrics=True)
 
 
 
-plot_all_roc_curves(results, show_identity=False)
+plot_all_roc_curves(results, show_identity=False, show_plot=False, save_plot="evaluation_results/roc.svg")
+plot_all_roc_curves(results, show_identity=False, show_plot=False, save_plot="evaluation_results/roc.png")

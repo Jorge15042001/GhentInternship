@@ -172,7 +172,7 @@ def show_error_metrics_comparison(
         return fault_metrics_df, non_fault_metrics_df
 
 
-def plot_all_roc_curves(results, fault_ids=list(range(21)), plot_models=None, scatter=False, show_identity=True, scatter_size=1, error_metrics = ["SPE"]):
+def plot_all_roc_curves(results, fault_ids=list(range(21)), plot_models=None, scatter=False, show_identity=True, scatter_size=1, error_metrics=["SPE"], show_plot=True, save_plot=None):
     # For exactly 21 faults, this fits nicely in a 7 x 3 grid.
     # Adjust rows and cols if you have more or fewer.
     ncols = 3
@@ -211,7 +211,8 @@ def plot_all_roc_curves(results, fault_ids=list(range(21)), plot_models=None, sc
 
                 # Plot the ROC curve on the i-th axis
                 if scatter:
-                    axes[i].scatter(far, tpr, label=result_label, s=scatter_size)
+                    axes[i].scatter(
+                        far, tpr, label=result_label, s=scatter_size)
                 else:
                     axes[i].plot(far, tpr, label=result_label)
                 # axes[i].plot([0,1], [0, 1], linestyle='--')
@@ -232,7 +233,10 @@ def plot_all_roc_curves(results, fault_ids=list(range(21)), plot_models=None, sc
         axes[j].axis("off")
 
     #  plt.tight_layout()
-    plt.show()
+    if show_plot:
+        plt.show()
+    if save_plot is not None:
+        plt.savefig(save_plot)
 
 
 def load_models_with_cache(models_params):
