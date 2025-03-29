@@ -1,7 +1,15 @@
 import numpy as np
 import scipy.stats as stats
 from sklearn.preprocessing import StandardScaler
+from dataclasses import dataclass
 from .fault_detector import BaseFaultDetectionAlgorithm
+
+
+@dataclass
+class PLSFaultDetectorParameters:
+    n_components: float = 6
+    confidence_level: float = 0.99
+
 
 class PLSFaultDetector(BaseFaultDetectionAlgorithm):
     """
@@ -11,7 +19,7 @@ class PLSFaultDetector(BaseFaultDetectionAlgorithm):
     Monitors SPE and T² statistics for detecting anomalies based on latent variable modeling.
     """
 
-    def __init__(self, n_components=6, confidence_level=0.99):
+    def __init__(self, pls_params=PLSFaultDetectorParameters()):
         """
         Initialize the PLS Fault Detector.
 
@@ -19,8 +27,8 @@ class PLSFaultDetector(BaseFaultDetectionAlgorithm):
         - n_components (int): Number of latent variables to retain.
         - confidence_level (float): Confidence level for threshold calculation.
         """
-        self.n_components = n_components
-        self.confidence_level = confidence_level
+        self.n_components = pls_params.n_components
+        self.confidence_level = pls_params.confidence_level
         self.x_scaler = StandardScaler()
         self.y_scaler = StandardScaler()
 

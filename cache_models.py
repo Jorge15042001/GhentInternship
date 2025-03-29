@@ -3,6 +3,7 @@ import sqlite3
 import pickle
 import json
 import hashlib
+from DatasetManager import DatasetLoader
 
 # You can customize these constants as needed
 CACHE_FOLDER = "model_cache"
@@ -27,7 +28,7 @@ def _init_cache_db():
         pickle_path TEXT
     )
     """)
-    
+
     # Table for evaluation results
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS eval_cache (
@@ -71,7 +72,8 @@ def _lookup_model_cache(cache_key):
     """Look up a model cache record in the model_cache table by cache_key."""
     conn = sqlite3.connect(CACHE_DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT pickle_path FROM model_cache WHERE cache_key = ?", (cache_key,))
+    cursor.execute(
+        "SELECT pickle_path FROM model_cache WHERE cache_key = ?", (cache_key,))
     row = cursor.fetchone()
     conn.close()
     return row[0] if row else None
@@ -92,7 +94,8 @@ def _lookup_eval_cache(cache_key):
     """Look up an evaluation cache record in the eval_cache table by cache_key."""
     conn = sqlite3.connect(CACHE_DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT pickle_path FROM eval_cache WHERE cache_key = ?", (cache_key,))
+    cursor.execute(
+        "SELECT pickle_path FROM eval_cache WHERE cache_key = ?", (cache_key,))
     row = cursor.fetchone()
     conn.close()
     return row[0] if row else None
@@ -109,7 +112,7 @@ def _store_eval_cache(cache_key, pickle_path):
     conn.close()
 
 
-def train_with_cache(model_class, model_params, dataset_id, X_train, y_train=None, force_retrain=False):
+def train_with_cache(model_class, model_params, dataset_id, dataset_loader: DatasetLoader, force_retrain=False):
     """
     Train a model (subclass of BaseFaultDetectionAlgorithm, or any pickleable model)
     using the specified parameters and dataset_id, with caching.
@@ -129,7 +132,8 @@ def train_with_cache(model_class, model_params, dataset_id, X_train, y_train=Non
 
     # Build a stable key
     # For example: model class name + model_params + dataset_id
-    cache_key = _make_hash_key(full_class_name, model_params, dataset_id)
+    cache_key = _make_hash_key(
+        full_class_name, model_params.__dict__, dataset_id)
 
     # Check if a pickle path already exists in the DB
     existing_path = None if force_retrain else _lookup_model_cache(cache_key)
@@ -143,7 +147,8 @@ def train_with_cache(model_class, model_params, dataset_id, X_train, y_train=Non
     else:
         # Instantiate and train the model
         print("[train_with_cache] Training model from scratch...")
-        model_obj = model_class(**model_params)
+        model_obj = model_class(model_params)
+        X_train, y_train = dataset_loader.get()
         model_obj.train(X_train, y_train)
 
         # Save to pickle
@@ -166,7 +171,8 @@ def load_model_with_cache(model_class, model_params, dataset_id):
     """
     _init_cache_db()
     full_class_name = f"{model_class.__module__}.{model_class.__name__}"
-    cache_key = _make_hash_key(full_class_name, model_params, dataset_id)
+    cache_key = _make_hash_key(
+        full_class_name, model_params.__dict__, dataset_id)
     existing_path = _lookup_model_cache(cache_key)
     if existing_path and os.path.isfile(existing_path):
         print(f"[load_model_with_cache] Found model: {existing_path}")
@@ -178,11 +184,10 @@ def load_model_with_cache(model_class, model_params, dataset_id):
         return None
 
 
-def evaluate_with_cache(model_obj, dataset_id, eval_params, X_test, y_test, fault_numbers,
-                        force_recompute=False):
+def evaluate_with_cache(model_obj, dataset_id, eval_params, dataset: DatasetLoader, force_recompute=False):
     """
     Evaluate a trained model, caching the evaluation results (which must be pickleable).
-    
+
     - model_obj: an already-trained model instance
     - dataset_id: unique ID for the test dataset
     - eval_params: dict specifying evaluation parameters (e.g. {"roc_curve": True, ...})
@@ -211,7 +216,8 @@ def evaluate_with_cache(model_obj, dataset_id, eval_params, X_test, y_test, faul
 
     if existing_path and os.path.isfile(existing_path):
         # Load from cache
-        print(f"[evaluate_with_cache] Loading evaluation results from {existing_path}")
+        print(f"[evaluate_with_cache] Loading evaluation results from {
+              existing_path}")
         with open(existing_path, "rb") as f:
             results = pickle.load(f)
         return results
@@ -220,7 +226,10 @@ def evaluate_with_cache(model_obj, dataset_id, eval_params, X_test, y_test, faul
         print("[evaluate_with_cache] Computing evaluation results...")
         # You may have different ways of evaluating:
         # for example, if your model has a standard evaluate() method:
-        results = model_obj.evaluate(X_test, y_test, fault_numbers, 
+        X_test, _, extra_df = dataset.get()
+
+        results = model_obj.evaluate(X_test.values, extra_df["y"].values,
+                                     extra_df["faultNumber"].values,
                                      roc_curve=eval_params.get('roc_curve', False),
                                      by_fault_type=eval_params.get('by_fault_type', True))
 

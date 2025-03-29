@@ -1,77 +1,61 @@
-from fault_detection_algorithms.PCAFaultDetector import PCAFaultDetector
-from fault_detection_algorithms.PLSFaultDetector import PLSFaultDetector 
-from fault_detection_algorithms.PLSFaultDetectorImproved import PLSFaultDetectorImproved
+from fault_detection_algorithms.PCAFaultDetector import PCAFaultDetector, PCAFaultDetectorParameters
+from fault_detection_algorithms.PLSFaultDetector import PLSFaultDetector, PLSFaultDetectorParameters
+from fault_detection_algorithms.PLSFaultDetectorImproved import PLSFaultDetectorImproved, PLSFaultDetectorImprovedParameters
+from fault_detection_algorithms.fault_detector import BaseFaultDetectionAlgorithm
+from datasets import tep_fault_free_training
+from DatasetManager import DatasetLoader
 
-models_params = {
-    "pca": {
-        'model_class': PCAFaultDetector,
-        "dataset_id":"tep_fault_free_training",
-        'retained_variance': 0.9,
-        'confidence_level': 0.99,
-        'scale_residuals': False,
-        'ignore_cache': True 
-     },
-    "pca_r_scl": {
-        'model_class': PCAFaultDetector,
-        "dataset_id":"tep_fault_free_training",
-        'retained_variance': 0.9,
-        'confidence_level': 0.99,
-        'scale_residuals': True,
-        'ignore_cache': False, 
-    },
-    # "pls LVs(6)":{
-    #     'model_class': PLSFaultDetector,
-    #     "dataset_id":"tep_fault_free_training",
-    #     'confidence_level': 0.99,
-    #     'n_components': 6,
-    #     'ignore_cache': True 
-    # },
-    # "pls LVs(29)":{
-    #     'model_class': PLSFaultDetector,
-    #     "dataset_id":"tep_fault_free_training",
-    #     'confidence_level': 0.99,
-    #     'n_components': 29,
-    #     'ignore_cache': False 
-    # },
-    # "pls LVs(17)":{
-    #     'model_class': PLSFaultDetector,
-    #     "dataset_id":"tep_fault_free_training",
-    #     'confidence_level': 0.99,
-    #     'n_components': 17,
-    #     'ignore_cache': True 
-    # },
-    
-    "plsi LVs(6)":{
-        'model_class': PLSFaultDetectorImproved,
-        "dataset_id":"tep_fault_free_training",
-        'alpha': 0.99,
-        'n_latent': 6,
-        'ignore_cache': True,
-        'use_percentiles': False
-    },
-    "plsi LVs(29)":{
-        'model_class': PLSFaultDetectorImproved,
-        "dataset_id":"tep_fault_free_training",
-        'alpha': 0.99,
-        'n_latent': 29,
-        'ignore_cache': True,
-        'use_percentiles': False
-    },
-    "plsi LVs(6) percentiles":{
-        'model_class': PLSFaultDetectorImproved,
-        "dataset_id":"tep_fault_free_training",
-        'alpha': 0.99,
-        'n_latent': 6,
-        'ignore_cache': True,
-        'use_percentiles': True 
-    },
-    "plsi LVs(29) percentiles":{
-        'model_class': PLSFaultDetectorImproved,
-        "dataset_id":"tep_fault_free_training",
-        'alpha': 0.99,
-        'n_latent': 29,
-        'ignore_cache': True ,
-        'use_percentiles': True 
-    },
-    
-}
+
+from dataclasses import dataclass
+
+
+@dataclass
+class TrainingParams:
+    dataset: DatasetLoader
+    model: BaseFaultDetectionAlgorithm
+    model_params: any
+    retrain: bool = False
+
+
+models_params = dict()
+
+
+# PCA model
+
+pca_params = PCAFaultDetectorParameters(
+    retained_variance=0.9,
+    confidence_level=0.99,
+    scale_residuals=False
+)
+models_params["pca"] = TrainingParams(
+    dataset=tep_fault_free_training,
+    model=PCAFaultDetector,
+    model_params=pca_params,
+    retrain=False
+    )
+
+# PCA scale residuals
+pca_params = PCAFaultDetectorParameters(
+    retained_variance=0.9,
+    confidence_level=0.99,
+    scale_residuals=True
+)
+models_params["pca_r_scl"] = TrainingParams(
+    dataset=tep_fault_free_training,
+    model=PCAFaultDetector,
+    model_params=pca_params,
+    retrain=False
+    )
+
+# PLS 6 latent variables
+pls_params = PLSFaultDetectorImprovedParameters(
+    alpha=0.99,
+    n_latent=6,
+    use_percentiles=False
+    )
+models_params["pls LVs(6)"] = TrainingParams(
+    dataset=tep_fault_free_training,
+    model=PLSFaultDetectorImproved,
+    model_params=pls_params,
+    retrain=False
+    )
